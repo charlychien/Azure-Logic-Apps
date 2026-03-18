@@ -1,0 +1,188 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "When_an_Microsoft_Defender_for_Cloud_Alert_is_created_or_triggered": {
+                "type": "ApiConnectionWebhook",
+                "inputs": {
+                    "body": {
+                        "callback_url": "@{listCallbackUrl()}"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['mdcalert']['connectionId']"
+                        }
+                    },
+                    "path": "/Microsoft.Security/Alert/subscribe"
+                }
+            }
+        },
+        "actions": {
+            "Log_Trigger_Body": {
+                "runAfter": {},
+                "type": "Compose",
+                "inputs": "@triggerBody()"
+            },
+            "Check_Malicious_Alert": {
+                "runAfter": {
+                    "Log_Trigger_Body": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "If",
+                "expression": "@contains(toLower(string(triggerBody())), 'malicious')",
+                "actions": {
+                    "Log_Malicious_Detected": {
+                        "type": "Compose",
+                        "inputs": "Malicious alert detected. Proceeding to move blob to maliciousfiles container."
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "Skip_Non_Malicious": {
+                            "type": "Compose",
+                            "inputs": "Alert is not malicious. Workflow skips blob move."
+                        }
+                    }
+                }
+            },
+            "GetBlobEntity": {
+                "runAfter": {
+                    "Check_Malicious_Alert": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Query",
+                "inputs": {
+                    "from": "@coalesce(triggerBody()?['Entities'], triggerBody()?['data']?['Entities'], json('[]'))",
+                    "where": "@equals(toLower(string(coalesce(item()?['type'], item()?['Type']))), 'blob')"
+                }
+            },
+            "Check_Blob_Found": {
+                "runAfter": {
+                    "GetBlobEntity": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "If",
+                "expression": "@greater(length(body('GetBlobEntity')), 0)",
+                "actions": {
+                    "Compose_SourceBlobUrl": {
+                        "type": "Compose",
+                        "inputs": "@coalesce(first(body('GetBlobEntity'))?['Url'], first(body('GetBlobEntity'))?['url'], first(body('GetBlobEntity'))?['blobUri'], first(body('GetBlobEntity'))?['BlobUri'])"
+                    },
+                    "Compose_SourceBlobName": {
+                        "runAfter": {
+                            "Compose_SourceBlobUrl": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Compose",
+                        "inputs": "@join(skip(split(uriPath(outputs('Compose_SourceBlobUrl')), '/'), 2), '/')"
+                    },
+                    "Copy_Blob_To_Malicious": {
+                        "runAfter": {
+                            "Compose_SourceBlobName": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://storage.azure.com/"
+                            },
+                            "headers": {
+                                "x-ms-version": "2019-07-07",
+                                "x-ms-copy-source": "@{outputs('Compose_SourceBlobUrl')}"
+                            },
+                            "method": "PUT",
+                            "uri": "@{concat('https://', uriHost(outputs('Compose_SourceBlobUrl')), '/maliciousfiles/', outputs('Compose_SourceBlobName'))}"
+                        }
+                    },
+                    "Delete_Blob": {
+                        "runAfter": {
+                            "Copy_Blob_To_Malicious": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Http",
+                        "inputs": {
+                            "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://storage.azure.com/"
+                            },
+                            "headers": {
+                                "x-ms-version": "2019-07-07"
+                            },
+                            "method": "DELETE",
+                            "uri": "@{outputs('Compose_SourceBlobUrl')}"
+                        }
+                    },
+                    "Log_Success": {
+                        "runAfter": {
+                            "Delete_Blob": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "Compose",
+                        "inputs": {
+                            "message": "Malware blob successfully moved to maliciousfiles container and original deleted",
+                            "blobName": "@{outputs('Compose_SourceBlobName')}",
+                            "timestamp": "@{utcNow()}"
+                        }
+                    },
+                    "Handle_Copy_Failure": {
+                        "runAfter": {
+                            "Copy_Blob_To_Malicious": [
+                                "Failed",
+                                "TimedOut"
+                            ]
+                        },
+                        "type": "Compose",
+                        "inputs": "Failed to copy blob to maliciousfiles container. Original blob was not deleted."
+                    },
+                    "Handle_Delete_Failure": {
+                        "runAfter": {
+                            "Delete_Blob": [
+                                "Failed",
+                                "TimedOut"
+                            ]
+                        },
+                        "type": "Compose",
+                        "inputs": "Failed to delete original blob. Copy may exist in maliciousfiles while source remains."
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "No_Blob_Found": {
+                            "type": "Compose",
+                            "inputs": "No blob entity found in alert payload."
+                        }
+                    }
+                }
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "mdcalert": {
+                    "id": "/subscriptions/a8fce891-6b03-4c65-845b-aa0b784eb86a/providers/Microsoft.Web/locations/southeastasia/managedApis/ascalert",
+                    "connectionId": "/subscriptions/a8fce891-6b03-4c65-845b-aa0b784eb86a/resourceGroups/rg-seasia-site/providers/Microsoft.Web/connections/mdcalert-Remove-MalwareFile",
+                    "connectionName": "mdcalert-Remove-MalwareFile",
+                    "connectionProperties": {}
+                }
+            }
+        }
+    }
+}
