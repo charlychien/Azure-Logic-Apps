@@ -177,9 +177,9 @@
             "type": "Object",
             "value": {
                 "mdcalert": {
-                    "id": "/subscriptions/a8fce891-6b03-4c65-845b-aa0b784eb86a/providers/Microsoft.Web/locations/southeastasia/managedApis/ascalert",
-                    "connectionId": "/subscriptions/a8fce891-6b03-4c65-845b-aa0b784eb86a/resourceGroups/rg-seasia-site/providers/Microsoft.Web/connections/mdcalert-Remove-MalwareFile",
-                    "connectionName": "mdcalert-Remove-MalwareFile",
+                    "id": "/subscriptions/-----------your subscription id------------/providers/Microsoft.Web/locations/southeastasia/managedApis/ascalert",
+                    "connectionId": "/subscriptions/-----------your subscription id------------/resourceGroups/-----name of rg------/providers/Microsoft.Web/connections/mdcalert-Remove-MalwareBlob",
+                    "connectionName": "mdcalert-Remove-MalwareBlob",
                     "connectionProperties": {}
                 }
             }
