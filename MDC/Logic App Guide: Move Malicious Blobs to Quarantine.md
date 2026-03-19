@@ -68,6 +68,10 @@ Destination blob after copy:
 Original blob is then deleted.
 
 ## Prerequisites
+Deploy the DeleteBlobLogicApp Azure Resource Manager (ARM) template by using the Azure portal.
+https://github.com/Azure/Microsoft-Defender-for-Cloud/tree/main/Workflow%20automation/Delete%20Blob%20LogicApp%20Defender%20for%20Storage
+Once deployed, use json file to replace logic app's code, and remember to put the right subscription id and the name of rg.
+
 1. Logic App has system-assigned managed identity enabled.
 2. Managed identity has required Storage Blob Data permissions on target storage account:
 - Storage Blob Data Contributor (minimum for copy and delete)
